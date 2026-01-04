@@ -75,6 +75,20 @@ CREATE TABLE expenses (
     );
   }
 
+  Future<int> deleteAllExpenses() async {
+    final db = await instance.database;
+    return await db.delete('expenses');
+  }
+
+  Future<int> deleteExpensesByCategory(String category) async {
+    final db = await instance.database;
+    return await db.delete(
+      'expenses',
+      where: 'category = ?',
+      whereArgs: [category],
+    );
+  }
+
   Future<void> close() async {
     final db = await instance.database;
     db.close();

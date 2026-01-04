@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BudgetStatus {
@@ -19,21 +19,32 @@ class BudgetStatus {
   });
 }
 
-class BudgetService {
+class BudgetService extends ChangeNotifier {
   static final BudgetService instance = BudgetService._init();
   static const String _budgetKey = 'monthly_budget';
   static const double _defaultBudget = 5000.0;
 
-  final _budgetController = StreamController<double>.broadcast();
+  double _currentBudget = _defaultBudget;
 
-  BudgetService._init();
+  BudgetService._init() {
+    _loadBudget();
+  }
 
-  Stream<double> get onBudgetChanged => _budgetController.stream;
+  // Public getter for current budget
+  double get currentBudget => _currentBudget;
+
+  // Load budget from SharedPreferences
+  Future<void> _loadBudget() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentBudget = prefs.getDouble(_budgetKey) ?? _defaultBudget;
+    notifyListeners();
+  }
 
   Future<void> setBudget(double amount) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_budgetKey, amount);
-    _budgetController.add(amount);
+    _currentBudget = amount;
+    notifyListeners();
   }
 
   Future<double> getBudget() async {
@@ -53,9 +64,5 @@ class BudgetService {
       isNearLimit: percentage >= 0.8 && percentage < 1.0,
       isExceeded: percentage >= 1.0,
     );
-  }
-
-  void dispose() {
-    _budgetController.close();
   }
 }

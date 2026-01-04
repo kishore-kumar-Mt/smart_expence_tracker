@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/expense.dart';
-import '../services/database_helper.dart';
+import '../services/expense_service.dart';
 import '../services/budget_service.dart';
 import '../services/notification_service.dart';
 import 'add_expense_screen.dart';
 import 'analytics_screen.dart';
+import 'all_transactions_screen.dart';
+import 'category_transactions_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,13 +20,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Expense> _expenses = [];
-  bool _isLoading = true;
-  double _totalBudget = 5000.0; // Default fallback
-  late BudgetService _budgetService;
-
-  late StreamSubscription<double> _budgetSubscription;
-
   // Alert State Flags
   bool _hasShownWarning = false;
   bool _hasShownExceeded = false;
@@ -32,39 +27,29 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _budgetService = BudgetService.instance;
     _checkMonthlyReset();
-    _loadData();
-    _budgetSubscription = _budgetService.onBudgetChanged.listen((newBudget) {
-      setState(() {
-        _totalBudget = newBudget;
-      });
-      _checkBudgetStatus();
+
+    // Listen to expense changes for budget alerts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final expenseService = context.read<ExpenseService>();
+      expenseService.addListener(_checkBudgetStatus);
     });
   }
 
   @override
   void dispose() {
-    _budgetSubscription.cancel();
+    final expenseService = context.read<ExpenseService>();
+    expenseService.removeListener(_checkBudgetStatus);
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final expenses = await DatabaseHelper.instance.getExpenses();
-    final budget = await _budgetService.getBudget();
-    setState(() {
-      _expenses = expenses;
-      _totalBudget = budget;
-      _isLoading = false;
-    });
-
-    _checkBudgetStatus();
-  }
-
   void _checkBudgetStatus() {
-    double totalSpent = _expenses.fold(0, (sum, item) => sum + item.amount);
-    final status = _budgetService.getStatus(totalSpent, _totalBudget);
+    final expenseService = context.read<ExpenseService>();
+    final budgetService = context.read<BudgetService>();
+
+    final totalSpent = expenseService.totalSpent;
+    final totalBudget = budgetService.currentBudget;
+    final status = budgetService.getStatus(totalSpent, totalBudget);
 
     // Reset flags if budget status improves
     if (status.percentageUsed < 0.8) {
@@ -78,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _hasShownExceeded = true;
       _triggerAlert(
         'Budget Exceeded!',
-        'You have exceeded your monthly budget of \$${_totalBudget.toStringAsFixed(0)}.',
+        'You have exceeded your monthly budget of \$${totalBudget.toStringAsFixed(0)}.',
       );
     } else if (status.isNearLimit && !_hasShownWarning) {
       _hasShownWarning = true;
@@ -115,9 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
       note: data['note'] as String?,
     );
 
-    await DatabaseHelper.instance.insertExpense(newExpense);
-
-    _loadData(); // Reloads and checks budget
+    final expenseService = context.read<ExpenseService>();
+    await expenseService.addExpense(newExpense);
   }
 
   Future<void> _checkMonthlyReset() async {
@@ -130,7 +114,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (lastMonth != now.month || lastYear != now.year) {
         // New month detected!
         final startOfCurrentMonth = DateTime(now.year, now.month, 1);
-        await DatabaseHelper.instance.deleteExpensesBefore(startOfCurrentMonth);
+        final expenseService = context.read<ExpenseService>();
+        await expenseService.deleteExpensesBefore(startOfCurrentMonth);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -151,8 +136,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showEditBudgetDialog() {
+    final budgetService = context.read<BudgetService>();
     final TextEditingController controller = TextEditingController(
-      text: _totalBudget.toStringAsFixed(0),
+      text: budgetService.currentBudget.toStringAsFixed(0),
     );
 
     showDialog(
@@ -177,10 +163,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () async {
                 final newValue = double.tryParse(controller.text);
                 if (newValue != null && newValue > 0) {
-                  await _budgetService.setBudget(newValue);
+                  await budgetService.setBudget(newValue);
                   if (mounted) {
                     Navigator.pop(context);
-                    _loadData();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Budget updated successfully!'),
@@ -205,69 +190,75 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double totalSpent = _expenses.fold(0, (sum, item) => sum + item.amount);
-    final status = _budgetService.getStatus(totalSpent, _totalBudget);
+    return Consumer2<ExpenseService, BudgetService>(
+      builder: (context, expenseService, budgetService, child) {
+        final expenses = expenseService.expenses;
+        final totalSpent = expenseService.totalSpent;
+        final totalBudget = budgetService.currentBudget;
+        final status = budgetService.getStatus(totalSpent, totalBudget);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Smart Expense'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            tooltip: 'Edit Budget',
-            onPressed: _showEditBudgetDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.bar_chart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AnalyticsScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SummaryCard(
-                    totalSpent: totalSpent,
-                    remainingBudget: status.remaining,
-                    isExceeded: status.isExceeded,
-                  ),
-                  const _CategorySection(),
-                  _RecentTransactionsList(expenses: _expenses),
-                ],
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Smart Expense'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: 'Edit Budget',
+                onPressed: _showEditBudgetDialog,
               ),
+              IconButton(
+                icon: const Icon(Icons.bar_chart),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AnalyticsScreen(),
+                    ),
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                onPressed: () {},
+              ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SummaryCard(
+                  totalSpent: totalSpent,
+                  remainingBudget: status.remaining,
+                  isExceeded: status.isExceeded,
+                ),
+                const _CategorySection(),
+                _RecentTransactionsList(expenses: expenses),
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (ctx) => const AddExpenseScreen()),
-          );
-
-          if (result != null && result is Map<String, dynamic>) {
-            await _addExpense(result);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Expense added successfully!')),
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (ctx) => const AddExpenseScreen()),
               );
-            }
-          }
-        },
-        child: const Icon(Icons.add),
-      ),
+
+              if (result != null && result is Map<String, dynamic>) {
+                await _addExpense(result);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Expense added successfully!'),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Icon(Icons.add),
+          ),
+        );
+      },
     );
   }
 }
@@ -350,6 +341,9 @@ class _CategorySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final expenseService = context.watch<ExpenseService>();
+    final currencyFormat = NumberFormat.compactSimpleCurrency();
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Column(
@@ -367,29 +361,68 @@ class _CategorySection extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
-              children: const [
+              children: [
                 _CategoryCard(
                   icon: Icons.restaurant,
                   label: 'Food',
                   color: Colors.orange,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Food'),
+                  ),
                 ),
-                SizedBox(width: 16),
+                const SizedBox(width: 16),
                 _CategoryCard(
                   icon: Icons.flight,
                   label: 'Travel',
                   color: Colors.blue,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Travel'),
+                  ),
                 ),
-                SizedBox(width: 16),
+                const SizedBox(width: 16),
                 _CategoryCard(
                   icon: Icons.shopping_bag,
                   label: 'Shopping',
                   color: Colors.purple,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Shopping'),
+                  ),
                 ),
-                SizedBox(width: 16),
+                const SizedBox(width: 16),
                 _CategoryCard(
                   icon: Icons.movie,
                   label: 'Entertainment',
                   color: Colors.red,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Entertainment'),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _CategoryCard(
+                  icon: Icons.receipt,
+                  label: 'Bills',
+                  color: Colors.green,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Bills'),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _CategoryCard(
+                  icon: Icons.local_hospital,
+                  label: 'Health',
+                  color: Colors.teal,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Health'),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _CategoryCard(
+                  icon: Icons.category,
+                  label: 'Other',
+                  color: Colors.grey,
+                  amount: currencyFormat.format(
+                    expenseService.getCategoryTotal('Other'),
+                  ),
                 ),
               ],
             ),
@@ -404,34 +437,55 @@ class _CategoryCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final String amount;
 
   const _CategoryCard({
     required this.icon,
     required this.label,
     required this.color,
+    required this.amount,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 70,
-          height: 70,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                CategoryTransactionsScreen(categoryName: label),
           ),
-          child: Icon(icon, color: color, size: 32),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-        ),
-      ],
+        );
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: color, size: 32),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            amount,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -450,9 +504,25 @@ class _RecentTransactionsList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Recent Transactions',
-            style: Theme.of(context).textTheme.headlineSmall,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recent Transactions',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AllTransactionsScreen(),
+                    ),
+                  );
+                },
+                child: const Text('See All'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           if (recentExpenses.isEmpty)
@@ -513,26 +583,66 @@ class _TransactionItem extends StatelessWidget {
 
     final currencyFormat = NumberFormat.currency(symbol: '\$');
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withOpacity(0.1),
-          child: Icon(icon, color: color),
-        ),
-        title: Text(
-          expense.note?.isNotEmpty == true ? expense.note! : expense.category,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          DateFormat('MMM d, y').format(expense.date),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        trailing: Text(
-          '-${currencyFormat.format(expense.amount)}',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Colors.red,
-            fontWeight: FontWeight.bold,
+    return Dismissible(
+      key: Key(expense.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (direction) async {
+        return await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete Transaction'),
+            content: const Text(
+              'Are you sure you want to delete this expense?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (direction) {
+        context.read<ExpenseService>().deleteExpense(expense.id);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Transaction deleted')));
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: color.withOpacity(0.1),
+            child: Icon(icon, color: color),
+          ),
+          title: Text(
+            expense.note?.isNotEmpty == true ? expense.note! : expense.category,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          subtitle: Text(
+            DateFormat('MMM d, y').format(expense.date),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          trailing: Text(
+            '-${currencyFormat.format(expense.amount)}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),
