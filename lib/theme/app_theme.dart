@@ -117,13 +117,12 @@ class AppTheme {
       ),
 
       // Card Theme Data
-     cardTheme: const CardThemeData(
-  elevation: 2,
-  shape: RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(16)),
-  ),
-),
-
+      cardTheme: const CardThemeData(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+      ),
 
       // AppBar Theme
       appBarTheme: AppBarTheme(
@@ -170,6 +169,96 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.grey[50], // Very light grey for inputs
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _primaryTeal, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+      ),
+    );
+  }
+
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _primaryTeal,
+        brightness: Brightness.dark,
+        primary: _primaryTeal,
+        secondary: _secondaryTeal,
+        surface: const Color(0xFF121212),
+        background: const Color(0xFF121212),
+        onPrimary: Colors.black,
+        onSecondary: Colors.black,
+        onSurface: Colors.white,
+        onBackground: Colors.white,
+      ),
+      scaffoldBackgroundColor: const Color(0xFF121212),
+
+      // Typography using Google Fonts (Copied styles but adapted for dark mode if needed)
+      // GoogleFonts usually adapts if text theme is from brightness
+      textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
+
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFF121212),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: GoogleFonts.outfit(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+
+      cardTheme: const CardThemeData(
+        elevation: 2,
+        color: Color(0xFF1E1E1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+      ),
+
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: _primaryTeal,
+        foregroundColor: Colors.black,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.0),
+        ),
+      ),
+
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primaryTeal,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF2C2C2C),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,

@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/expense.dart';
+import '../models/notification_item.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -18,7 +19,12 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 4,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -26,6 +32,7 @@ class DatabaseHelper {
     const numType = 'REAL NOT NULL';
     const textType = 'TEXT NOT NULL';
     const textNullable = 'TEXT';
+    const intNullable = 'INTEGER';
 
     await db.execute('''
 CREATE TABLE expenses (
@@ -33,9 +40,74 @@ CREATE TABLE expenses (
   amount $numType,
   category $textType,
   date $textType,
-  note $textNullable
+  note $textNullable,
+  type $textType DEFAULT 'expense',
+  frequency $textNullable,
+  recurrenceStartDate $textNullable,
+  recurrenceEndDate $textNullable,
+  recurrenceOccurrences $intNullable,
+  recurrenceTargetType $textNullable,
+  lastGeneratedDate $textNullable
 )
 ''');
+
+    await db.execute('''
+CREATE TABLE notifications (
+  id $idType,
+  title $textType,
+  body $textType,
+  timestamp $textType,
+  type $textType,
+  isRead INTEGER NOT NULL DEFAULT 0
+)
+''');
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    final columns = await db.rawQuery('PRAGMA table_info(expenses)');
+    final existingColumns = columns.map((c) => c['name'] as String).toList();
+
+    if (oldVersion < 2) {
+      if (!existingColumns.contains('type')) {
+        await db.execute(
+          "ALTER TABLE expenses ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'",
+        );
+      }
+    }
+    if (oldVersion < 3) {
+      final newColumns = [
+        'frequency',
+        'recurrenceStartDate',
+        'recurrenceEndDate',
+        'recurrenceOccurrences',
+        'recurrenceTargetType',
+        'lastGeneratedDate',
+      ];
+
+      for (var column in newColumns) {
+        if (!existingColumns.contains(column)) {
+          // Determine type based on your schema plan
+          String type = 'TEXT';
+          if (column == 'recurrenceOccurrences') type = 'INTEGER';
+
+          await db.execute("ALTER TABLE expenses ADD COLUMN $column $type");
+        }
+      }
+    }
+
+    if (oldVersion < 4) {
+      // Just execute create if not exists
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          type TEXT NOT NULL,
+          isRead INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
   }
 
   Future<int> insertExpense(Expense expense) async {
@@ -82,11 +154,24 @@ CREATE TABLE expenses (
 
   Future<int> deleteExpensesByCategory(String category) async {
     final db = await instance.database;
-    return await db.delete(
-      'expenses',
-      where: 'category = ?',
-      whereArgs: [category],
-    );
+    return await db.delete('expenses', whereArgs: [category]);
+  }
+
+  // Notifications CRUD
+  Future<int> insertNotification(NotificationItem item) async {
+    final db = await instance.database;
+    return await db.insert('notifications', item.toMap());
+  }
+
+  Future<List<NotificationItem>> getNotifications() async {
+    final db = await instance.database;
+    final result = await db.query('notifications', orderBy: 'timestamp DESC');
+    return result.map((json) => NotificationItem.fromMap(json)).toList();
+  }
+
+  Future<int> deleteAllNotifications() async {
+    final db = await instance.database;
+    return await db.delete('notifications');
   }
 
   Future<void> close() async {

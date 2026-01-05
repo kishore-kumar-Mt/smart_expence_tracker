@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
-import 'home_screen.dart';
+import 'main_screen.dart';
 import 'pin_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -49,7 +49,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void _navigateToHome() {
     if (mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        MaterialPageRoute(builder: (context) => const MainScreen()),
       );
     }
   }

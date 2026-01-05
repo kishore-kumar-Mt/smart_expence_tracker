@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'notification_service.dart';
 
 class BudgetStatus {
   final double budget;
@@ -26,6 +27,9 @@ class BudgetService extends ChangeNotifier {
 
   double _currentBudget = _defaultBudget;
 
+  // Deduplication state
+  String _lastAlertStatus = 'none'; // 'none', 'near', 'exceeded'
+
   BudgetService._init() {
     _loadBudget();
   }
@@ -44,6 +48,8 @@ class BudgetService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_budgetKey, amount);
     _currentBudget = amount;
+    // Reset alert status on budget change
+    _lastAlertStatus = 'none';
     notifyListeners();
   }
 
@@ -52,17 +58,70 @@ class BudgetService extends ChangeNotifier {
     return prefs.getDouble(_budgetKey) ?? _defaultBudget;
   }
 
-  BudgetStatus getStatus(double totalExpenses, double budgetLimit) {
-    final remaining = budgetLimit - totalExpenses;
-    final percentage = budgetLimit > 0 ? (totalExpenses / budgetLimit) : 0.0;
+  BudgetStatus getStatus(
+    double totalExpenses,
+    double budgetLimit, {
+    double totalIncome = 0.0,
+  }) {
+    final effectiveBudget = budgetLimit + totalIncome;
+    final remaining = effectiveBudget - totalExpenses;
+    final percentage = effectiveBudget > 0
+        ? (totalExpenses / effectiveBudget)
+        : 0.0;
+
+    final isNearLimit = percentage >= 0.8 && percentage < 1.0;
+    final isExceeded = percentage >= 1.0;
+
+    _checkAndTriggerNotifications(isNearLimit, isExceeded, effectiveBudget);
 
     return BudgetStatus(
       budget: budgetLimit,
       spent: totalExpenses,
       remaining: remaining,
       percentageUsed: percentage,
-      isNearLimit: percentage >= 0.8 && percentage < 1.0,
-      isExceeded: percentage >= 1.0,
+      isNearLimit: isNearLimit,
+      isExceeded: isExceeded,
     );
+  }
+
+  void _checkAndTriggerNotifications(
+    bool isNearLimit,
+    bool isExceeded,
+    double limit,
+  ) {
+    String currentStatus = 'none';
+    if (isExceeded) {
+      currentStatus = 'exceeded';
+    } else if (isNearLimit) {
+      currentStatus = 'near';
+    }
+
+    // Only trigger if status changed to a worse state or different state
+    // Avoiding spam if already sent for this month/period
+    // Ideally we should reset this status monthly, but budget service doesn't track time.
+    // However, if user keeps spending, it stays 'exceeded'.
+
+    if (currentStatus != _lastAlertStatus) {
+      _lastAlertStatus = currentStatus;
+
+      if (currentStatus == 'exceeded') {
+        NotificationService.instance.addNotification(
+          title: 'Budget Exceeded!',
+          body: 'You have exceeded your budget of ₹${limit.toStringAsFixed(0)}',
+          type: 'alert',
+        );
+      } else if (currentStatus == 'near') {
+        NotificationService.instance.addNotification(
+          title: 'Budget Warning',
+          body: 'You have used 80% of your budget.',
+          type: 'alert',
+        );
+      }
+    }
+  }
+
+  // Method to reset alert status (e.g. called on month reset)
+  void resetAlerts() {
+    _lastAlertStatus = 'none';
   }
 }

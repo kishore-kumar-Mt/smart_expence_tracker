@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../utils/currency_formatter.dart';
+
 import '../models/expense.dart';
 import '../services/expense_service.dart';
 
@@ -97,7 +99,22 @@ class _TransactionListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final currencyFormat = NumberFormat.currency(symbol: '\$');
+    // final currencyFormat = NumberFormat.currency(symbol: '\$'); // Removed
+
+    Color color;
+    IconData icon;
+
+    if (expense.type == TransactionType.income) {
+      color = Colors.green;
+      icon = Icons.monetization_on;
+    } else {
+      color = _getCategoryColor(expense.category);
+      icon = _getCategoryIcon(expense.category);
+    }
+
+    final isIncome = expense.type == TransactionType.income;
+    final prefix = isIncome ? '+' : '-';
+    final amountColor = isIncome ? Colors.green : Colors.red;
 
     return Dismissible(
       key: Key(expense.id),
@@ -114,7 +131,7 @@ class _TransactionListTile extends StatelessWidget {
           builder: (ctx) => AlertDialog(
             title: const Text('Delete Transaction'),
             content: const Text(
-              'Are you sure you want to delete this expense?',
+              'Are you sure you want to delete this transaction?',
             ),
             actions: [
               TextButton(
@@ -148,13 +165,8 @@ class _TransactionListTile extends StatelessWidget {
             vertical: 8,
           ),
           leading: CircleAvatar(
-            backgroundColor: _getCategoryColor(
-              expense.category,
-            ).withOpacity(0.1),
-            child: Icon(
-              _getCategoryIcon(expense.category),
-              color: _getCategoryColor(expense.category),
-            ),
+            backgroundColor: color.withOpacity(0.1),
+            child: Icon(icon, color: color),
           ),
           title: Text(
             expense.note?.isNotEmpty == true ? expense.note! : expense.category,
@@ -171,9 +183,9 @@ class _TransactionListTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '-${currencyFormat.format(expense.amount)}',
+                '$prefix${CurrencyFormatter.format(expense.amount)}',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.red,
+                  color: amountColor,
                   fontWeight: FontWeight.bold,
                 ),
               ),

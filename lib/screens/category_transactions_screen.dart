@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/expense.dart';
 import '../services/expense_service.dart';
+import '../utils/currency_formatter.dart';
 
 class CategoryTransactionsScreen extends StatelessWidget {
   final String categoryName;
@@ -40,7 +41,7 @@ class CategoryTransactionsScreen extends StatelessWidget {
             (sum, item) => sum + item.amount,
           );
           final transactionCount = expenses.length;
-          final currencyFormat = NumberFormat.currency(symbol: '\$');
+          // final currencyFormat = NumberFormat.currency(symbol: '\$');
 
           // simple insight
           String insight = '';
@@ -95,7 +96,7 @@ class CategoryTransactionsScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              currencyFormat.format(totalAmount),
+                              CurrencyFormatter.format(totalAmount),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 28,
@@ -239,7 +240,7 @@ class _CategoryTransactionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final currencyFormat = NumberFormat.currency(symbol: '\$');
+    // final currencyFormat = NumberFormat.currency(symbol: '\$');
 
     return Dismissible(
       key: Key(expense.id),
@@ -309,7 +310,7 @@ class _CategoryTransactionTile extends StatelessWidget {
             style: theme.textTheme.bodySmall,
           ),
           trailing: Text(
-            '-${currencyFormat.format(expense.amount)}',
+            '-${CurrencyFormatter.format(expense.amount)}',
             style: theme.textTheme.titleMedium?.copyWith(
               color: Colors.red,
               fontWeight: FontWeight.bold,
